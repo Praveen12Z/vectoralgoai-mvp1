@@ -12,7 +12,7 @@ from .auth import authenticate_user, register_user
 from .strategy_store import load_user_strategies, save_user_strategy, delete_user_strategy
 
 # ──────────────────────────────────────────────────────────────
-# CONSTANTS
+# CONSTANTS & UI OPTIONS
 # ──────────────────────────────────────────────────────────────
 MARKETS = [
     "NAS100", "US30", "SPX500",
@@ -22,30 +22,62 @@ MARKETS = [
 ]
 
 TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"]
+
 OPERATORS = [">", "<", ">=", "<=", "=="]
 
 # ──────────────────────────────────────────────────────────────
-# MAIN DASHBOARD
+# MAIN DASHBOARD FUNCTION
 # ──────────────────────────────────────────────────────────────
 def run_mvp_dashboard():
-    st.title("VectorAlgoAI – Crash-Test Lab **V4** (Regime + Slippage + Monte Carlo + Attribution)")
+    st.title("VectorAlgoAI – Crash-Test Lab **V4**")
+    st.caption("Regime filter • Slippage • Commissions • Monte Carlo • Per-indicator impact")
 
-    # ───── AUTH ─────
+    # ───── AUTHENTICATION (keep your existing login/register logic here) ─────
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
+        st.session_state.email = None
+
     if not st.session_state.logged_in:
-        # Your existing login/register code here (keep it)
+        tab1, tab2 = st.tabs(["Login", "Register"])
+        with tab1:
+            with st.form("login"):
+                email = st.text_input("Email")
+                pw = st.text_input("Password", type="password")
+                if st.form_submit_button("Login"):
+                    ok, msg = authenticate_user(email, pw)
+                    if ok:
+                        st.session_state.logged_in = True
+                        st.session_state.email = email
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        with tab2:
+            with st.form("register"):
+                reg_email = st.text_input("Email")
+                pw1 = st.text_input("Password", type="password")
+                pw2 = st.text_input("Confirm Password", type="password")
+                if st.form_submit_button("Create Account"):
+                    ok, msg = register_user(reg_email, pw1, pw2)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
         return
 
-    st.sidebar.write(f"**{st.session_state.email}**")
-
-    # ───── MARKET SETTINGS ─────
+    # ───── SIDEBAR ─────
     with st.sidebar:
+        st.write(f"**{st.session_state.email}**")
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.rerun()
+
         st.header("Market & Data")
         market = st.selectbox("Market", MARKETS, index=0)
         timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=3)
         years = st.slider("Years of History", 0.2, 5.0, 1.5, 0.1)
-        st.caption("Free Polygon tier → wait 5–10 min between tests")
+
+        st.info("Free Polygon tier → very limited calls. Wait 5–15 min between tests.")
 
     # ───── INDICATOR BUILDER ─────
     st.subheader("1. Indicators")
@@ -57,129 +89,159 @@ def run_mvp_dashboard():
         ]
 
     for i, ind in enumerate(st.session_state.indicators):
-        c1, c2, c3, c4 = st.columns([3, 2, 2, 1])
-        with c1: ind["name"] = st.text_input("Name", ind["name"], key=f"n{i}")
-        with c2: ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"t{i}")
-        with c3: ind["period"] = st.number_input("Period", 1, 300, ind["period"], key=f"p{i}")
-        with c4:
-            if st.button("🗑", key=f"d{i}"):
+        cols = st.columns([3, 2, 2, 1])
+        with cols[0]:
+            ind["name"] = st.text_input("Name", ind["name"], key=f"ind_name_{i}")
+        with cols[1]:
+            ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()),
+                                        index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"ind_type_{i}")
+        with cols[2]:
+            ind["period"] = st.number_input("Period", 1, 300, ind["period"], key=f"ind_per_{i}")
+        with cols[3]:
+            if st.button("🗑", key=f"ind_del_{i}"):
                 st.session_state.indicators.pop(i)
                 st.rerun()
 
     if st.button("＋ Add Indicator"):
-        st.session_state.indicators.append({"name": f"ind{len(st.session_state.indicators)+1}", "type": "ema", "period": 20})
+        st.session_state.indicators.append({"name": f"ind_{len(st.session_state.indicators)+1}", "type": "ema", "period": 20})
         st.rerun()
 
     # ───── ENTRY / EXIT BUILDER ─────
-    def cond_builder(key, title):
+    def condition_section(key: str, title: str):
         st.subheader(title)
         if st.button("＋ Add Condition", key=f"add_{key}"):
-            st.session_state[key].append({"left": "close", "op": ">", "right": "ema20"})
+            st.session_state.setdefault(key, []).append({"left": "close", "op": ">", "right": "ema20"})
             st.rerun()
-        for i, c in enumerate(st.session_state[key]):
-            c1, c2, c3, c4 = st.columns([3,1,3,1])
-            with c1: c["left"] = st.text_input("Left", c["left"], key=f"{key}_l{i}")
-            with c2: c["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(c["op"]), key=f"{key}_o{i}")
-            with c3: c["right"] = st.text_input("Right", c["right"], key=f"{key}_r{i}")
+
+        for i, cond in enumerate(st.session_state.get(key, [])):
+            c1, c2, c3, c4 = st.columns([3, 1, 3, 1])
+            with c1:
+                cond["left"] = st.text_input("Left", cond["left"], key=f"{key}_left_{i}")
+            with c2:
+                cond["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(cond["op"]), key=f"{key}_op_{i}")
+            with c3:
+                cond["right"] = st.text_input("Right", cond["right"], key=f"{key}_right_{i}")
             with c4:
-                if st.button("🗑", key=f"{key}_del{i}"):
+                if st.button("🗑", key=f"del_{key}_{i}"):
                     st.session_state[key].pop(i)
                     st.rerun()
 
-    col_e, col_x = st.columns(2)
-    with col_e:
-        if "entry_long" not in st.session_state: st.session_state.entry_long = []
-        if "entry_short" not in st.session_state: st.session_state.entry_short = []
-        cond_builder("entry_long", "Long Entry (ALL true)")
-        cond_builder("entry_short", "Short Entry (ALL true)")
-    with col_x:
-        if "exit_long" not in st.session_state: st.session_state.exit_long = []
-        if "exit_short" not in st.session_state: st.session_state.exit_short = []
-        cond_builder("exit_long", "Long Exit")
-        cond_builder("exit_short", "Short Exit")
+    col_entry, col_exit = st.columns(2)
+    with col_entry:
+        condition_section("entry_long", "Long Entry Conditions (ALL must be true)")
+        condition_section("entry_short", "Short Entry Conditions (ALL must be true)")
+    with col_exit:
+        condition_section("exit_long", "Long Exit Conditions")
+        condition_section("exit_short", "Short Exit Conditions")
 
     # ───── RUN BUTTON ─────
     if st.button("🚀 RUN V4 BACKTEST (Slippage + Regime + Monte Carlo)", type="primary", use_container_width=True):
-        with st.spinner("Fetching data..."):
-            df_price = load_ohlcv(market, timeframe, years)
-            if df_price.empty: st.stop()
+        with st.spinner("Loading market data..."):
+            df = load_ohlcv(market, timeframe, years)
+            if df.empty:
+                st.stop()
 
-        with st.spinner("Building strategy + backtesting..."):
-            # Build indicators
+        with st.spinner("Building strategy & backtesting..."):
+            # Build indicators config
             ind_cfg = [{"name": i["name"], "type": i["type"], "period": i["period"]} for i in st.session_state.indicators]
 
             # Build entry/exit
-            entry = {
-                "long": [{"all": st.session_state.entry_long}] if st.session_state.entry_long else [],
-                "short": [{"all": st.session_state.entry_short}] if st.session_state.entry_short else []
+            entry_cfg = {
+                "long": [{"all": st.session_state.get("entry_long", [])}] if st.session_state.get("entry_long") else [],
+                "short": [{"all": st.session_state.get("entry_short", [])}] if st.session_state.get("entry_short") else []
             }
-            exit_ = {
-                "long": [{"all": st.session_state.exit_long}] if st.session_state.exit_long else [],
-                "short": [{"all": st.session_state.exit_short}] if st.session_state.exit_short else []
+            exit_cfg = {
+                "long": [{"all": st.session_state.get("exit_long", [])}] if st.session_state.get("exit_long") else [],
+                "short": [{"all": st.session_state.get("exit_short", [])}] if st.session_state.get("exit_short") else []
             }
 
             cfg_dict = {
-                "name": "V4 Strategy",
+                "name": "V4 UI Strategy",
                 "market": market,
                 "timeframe": timeframe,
                 "indicators": ind_cfg,
-                "entry": entry,
-                "exit": exit_,
+                "entry": entry_cfg,
+                "exit": exit_cfg,
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
-            cfg = parse_strategy_yaml(str(cfg_dict))
 
-            df = apply_all_indicators(df_price, cfg)
+            cfg = parse_strategy_yaml(str(cfg_dict))  # convert dict → YAML string → object
 
-            # Run enhanced backtester
+            df = apply_all_indicators(df, cfg)
+
+            # Run V4 backtester
             result = run_backtest_v2(
-                df, cfg,
+                df,
+                cfg,
                 slippage_pct=0.0008,
                 commission_per_trade=3.0,
                 monte_carlo_runs=800
             )
 
-        # ───── RESULTS ─────
+        # ───── DISPLAY RESULTS ─────
         metrics = result["metrics"]
         trades_df = result["trades_df"]
-        equity = result["equity_series"]
+        equity_series = result["equity_series"]
         mc = result.get("monte_carlo", {})
         regime_stats = result.get("regime_stats", {})
 
         st.success(f"Backtest complete – {len(df)} bars | {metrics['num_trades']} trades")
 
-        c = st.columns(5)
-        c[0].metric("Return", f"{metrics['total_return_pct']:.2f}%")
-        c[1].metric("PF", f"{metrics['profit_factor']:.2f}")
-        c[2].metric("Win Rate", f"{metrics['win_rate_pct']:.1f}%")
-        c[3].metric("Max DD", f"{metrics['max_drawdown_pct']:.1f}%")
-        c[4].metric("Trades", metrics["num_trades"])
+        # Core metrics
+        cols = st.columns(5)
+        cols[0].metric("Total Return", f"{metrics['total_return_pct']:.2f}%")
+        cols[1].metric("Profit Factor", f"{metrics['profit_factor']:.2f}")
+        cols[2].metric("Win Rate", f"{metrics['win_rate_pct']:.1f}%")
+        cols[3].metric("Max DD", f"{metrics['max_drawdown_pct']:.1f}%")
+        cols[4].metric("Trades", metrics["num_trades"])
 
-        st.subheader("Equity Curve (Slippage + Commissions)")
-        st.line_chart(equity)
+        # Equity curve
+        st.subheader("Equity Curve (with slippage & commissions)")
+        st.line_chart(equity_series)
 
+        # Monte Carlo
         if mc:
-            st.subheader("Monte Carlo (800 runs)")
-            st.write(f"Mean: **{mc['mean_return']:.2f}%** | Median: **{mc['median_return']:.2f}%** | 5% worst: **{mc['worst_dd_95']:.2f}%**")
+            st.subheader("Monte Carlo Robustness (800 runs)")
+            cols_mc = st.columns(3)
+            cols_mc[0].metric("Mean Return", f"{mc['mean_return']:.2f}%")
+            cols_mc[1].metric("Median Return", f"{mc['median_return']:.2f}%")
+            cols_mc[2].metric("Worst 5%", f"{mc['worst_5pct']:.2f}%")
 
+        # Regime stats
         if regime_stats:
-            st.subheader("Regime Breakdown")
+            st.subheader("Performance by Market Regime")
             st.dataframe(pd.DataFrame(regime_stats))
 
         # Per-indicator impact
-        st.subheader("Indicator Impact")
+        st.subheader("Indicator Contribution to PnL")
         impact = []
-        for i in st.session_state.indicators:
-            col = i["name"]
+        for ind in st.session_state.indicators:
+            col = ind["name"]
             if col in df.columns:
                 corr = df[col].corr(trades_df["pnl"].reindex(df.index, method="ffill").fillna(0))
-                impact.append({"Indicator": col, "Type": i["type"].upper(), "Corr to PnL": round(corr, 3)})
+                impact.append({
+                    "Indicator": col,
+                    "Type": ind["type"].upper(),
+                    "Period": ind["period"],
+                    "Corr to PnL": round(corr, 3)
+                })
         if impact:
             st.dataframe(pd.DataFrame(impact).sort_values("Corr to PnL", ascending=False), use_container_width=True)
+        else:
+            st.info("No indicators added yet")
 
-        # Save
-        if st.button("💾 Save Strategy"):
-            name = st.text_input("Name", "V4 Strategy")
-            yaml = f"name: \"{name}\"\nmarket: \"{market}\"\ntimeframe: \"{timeframe}\"\nindicators: {st.session_state.indicators}\nentry: {entry}\nexit: {exit_}\nrisk: {{capital: 10000, risk_per_trade_pct: 1.0}}"
-            ok, msg = save_user_strategy(st.session_state.email, name, yaml)
-            st.success(msg) if ok else st.error(msg)
+        # Save strategy
+        if st.button("💾 Save This Strategy"):
+            name = st.text_input("Strategy Name", "V4 Custom Strategy")
+            yaml_text = f"""name: "{name}"
+market: "{market}"
+timeframe: "{timeframe}"
+indicators: {st.session_state.indicators}
+entry: {entry_cfg}
+exit: {exit_cfg}
+risk: {{capital: 10000, risk_per_trade_pct: 1.0}}"""
+            ok, msg = save_user_strategy(st.session_state.email, name, yaml_text)
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
