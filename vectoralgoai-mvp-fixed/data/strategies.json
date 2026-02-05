@@ -1,0 +1,10 @@
+{
+  "yadavpraveen898@gmail.com": [
+    {
+      "name": "nas",
+      "yaml": "name: \"NAS100 Momentum v5 \u2013 Pullback System\"\nmarket: \"NAS100\"\ntimeframe: \"1h\"\n\nindicators:\n  - name: ema20\n    type: ema\n    period: 20\n    source: close\n\n  - name: ema50\n    type: ema\n    period: 50\n    source: close\n\n  - name: ema200\n    type: ema\n    period: 200\n    source: close\n\n  - name: rsi14\n    type: rsi\n    period: 14\n    source: close\n\n  - name: atr14\n    type: atr\n    period: 14\n\nentry:\n  long:\n    - left: ema20\n      op: \">\"\n      right: ema50\n\n    - left: ema50\n      op: \">\"\n      right: ema200\n\n    - left: close\n      op: \"<\"\n      right: ema20\n\n    - left: close\n      op: \">\"\n      right: ema50\n\n    - left: rsi14\n      op: \"<\"\n      right: 55\n\n    - left: rsi14\n      op: \">\"\n      right: 40\n\n  short:\n    - left: ema20\n      op: \"<\"\n      right: ema50\n\n    - left: ema50\n      op: \"<\"\n      right: ema200\n\n    - left: close\n      op: \">\"\n      right: ema20\n\n    - left: close\n      op: \"<\"\n      right: ema50\n\n    - left: rsi14\n      op: \">\"\n      right: 45\n\n    - left: rsi14\n      op: \"<\"\n      right: 60\n\nexit:\n  long:\n    - type: atr_sl\n      atr_col: atr14\n      multiple: 2.0\n\n    - type: atr_tp\n      atr_col: atr14\n      multiple: 3.5\n\n  short:\n    - type: atr_sl\n      atr_col: atr14\n      multiple: 2.0\n\n    - type: atr_tp\n      atr_col: atr14\n      multiple: 3.5\n\nrisk:\n  capital: 10000\n  risk_per_trade_pct: 1.0\n",
+      "created_at": "2025-11-24T23:52:44.107649Z",
+      "updated_at": "2025-11-24T23:52:44.107649Z"
+    }
+  ]
+}
