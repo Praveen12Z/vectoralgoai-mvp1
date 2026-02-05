@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 from typing import Tuple
-
+import pandas as pd   # ← add this line
 USERS_DIR = "data"
 USERS_FILE = os.path.join(USERS_DIR, "users.json")
 
@@ -55,3 +55,4 @@ def authenticate_user(email: str, password: str) -> Tuple[bool, str]:
     if users[email]["password_hash"] != _hash_password(password):
         return False, "Incorrect password."
     return True, "Login successful."
+
