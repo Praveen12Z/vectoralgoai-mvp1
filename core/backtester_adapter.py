@@ -35,30 +35,36 @@ def run_backtest_v2(
 
     position: Optional[Position] = None
     trades: List[Dict] = []
-    equity = [capital]  # start with initial capital
+    equity = []  # start empty
+    regimes = []
 
-    # Regime detection
+    # Regime
     if "adx" not in df.columns:
         df["adx"] = 0
     df["regime"] = np.where(df["adx"] > 25, "trend", "chop")
 
+    # Loop over bars
     for ts, row in df.iterrows():
         close = float(row["close"])
         regime = row["regime"]
+        regimes.append(regime)
+
+        # Append equity **before** logic (equity at start of bar)
+        equity.append(capital)
 
         # Exit
         if position:
             exit_hit = False
             reason = ""
             if position.direction == "long":
-                if position.sl is not None and close <= position.sl:
+                if position.sl and close <= position.sl:
                     exit_hit, reason = True, "SL"
-                elif position.tp is not None and close >= position.tp:
+                elif position.tp and close >= position.tp:
                     exit_hit, reason = True, "TP"
             else:
-                if position.sl is not None and close >= position.sl:
+                if position.sl and close >= position.sl:
                     exit_hit, reason = True, "SL"
-                elif position.tp is not None and close <= position.tp:
+                elif position.tp and close <= position.tp:
                     exit_hit, reason = True, "TP"
 
             if exit_hit:
@@ -81,7 +87,7 @@ def run_backtest_v2(
                 capital += pnl
                 position = None
 
-        # Entry (only in trend regime)
+        # Entry
         if not position and regime == "trend":
             entered = False
             sl_val = tp_val = None
@@ -115,10 +121,15 @@ def run_backtest_v2(
                     entry_regime=regime
                 )
 
-        equity.append(capital)
+    # Final equity point (after last bar)
+    equity.append(capital)
+
+    # Equity series – length now = len(df) + 1
+    # Use a shifted index or extend df index
+    index = df.index.to_list() + [df.index[-1] + pd.Timedelta(1, "D")]
+    equity_series = pd.Series(equity, index=index[:len(equity)])
 
     trades_df = pd.DataFrame(trades)
-    equity_series = pd.Series(equity, index=df.index[:len(equity)])
 
     if trades_df.empty:
         return {
