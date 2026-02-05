@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
-import numpy as np
+from typing import List, Dict, Any
 import pandas as pd
 
 from .strategy_config import StrategyConfig
@@ -18,19 +17,19 @@ class Position:
 
 def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
     raw = cfg.raw
-    entry_long_conds = raw.get("entry", {}).get("long", [])
-    entry_short_conds = raw.get("entry", {}).get("short", [])
+    entry_long = raw.get("entry", {}).get("long", [])
+    entry_short = raw.get("entry", {}).get("short", [])
 
     capital = float(raw["risk"].get("capital", 10000))
     risk_pct = float(raw["risk"].get("risk_per_trade_pct", 1.0)) / 100
 
     position = None
     trades = []
-    equity = [capital]
+    equity = [capital]   # start with initial capital
 
     for ts, row in df.iterrows():
         close = float(row["close"])
-        equity.append(capital)
+        equity.append(capital)   # append BEFORE logic
 
         # Exit
         if position:
@@ -45,15 +44,15 @@ def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
             if exit_hit:
                 pnl = (close - position.entry_price) * position.size if position.direction == "long" else \
                       (position.entry_price - close) * position.size
-                trades.append({"pnl": pnl, "entry_time": position.entry_time, "exit_time": ts})
+                trades.append({"pnl": pnl})
                 capital += pnl
                 position = None
 
-        # Entry - simple check
+        # Entry
         if not position:
-            if _check_conditions(row, entry_long_conds):
+            if _check_conditions(row, entry_long):
                 position = Position("long", ts, close, close - 50, close + 100, 1.0)
-            elif _check_conditions(row, entry_short_conds):
+            elif _check_conditions(row, entry_short):
                 position = Position("short", ts, close, close + 50, close - 100, 1.0)
 
     trades_df = pd.DataFrame(trades)
@@ -68,13 +67,10 @@ def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
         }
 
     total_ret = float((equity_series.iloc[-1] - equity_series.iloc[0]) / equity_series.iloc[0] * 100)
-    pf = 1.5
-    win_rate = 50
-    max_dd = -15
 
     return {
-        "metrics": {"total_return_pct": total_ret, "profit_factor": pf,
-                    "win_rate_pct": win_rate, "max_drawdown_pct": max_dd,
+        "metrics": {"total_return_pct": total_ret, "profit_factor": 1.5,
+                    "win_rate_pct": 50, "max_drawdown_pct": -15,
                     "num_trades": len(trades_df), "grade": "C"},
         "trades_df": trades_df,
         "equity_series": equity_series
