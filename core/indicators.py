@@ -6,6 +6,8 @@ def _get_source(df: pd.DataFrame, source: str = "close") -> pd.Series:
         raise ValueError(f"Source '{source}' not found")
     return df[source]
 
+# ───────────────────── INDICATOR FUNCTIONS ─────────────────────
+
 def sma(df: pd.DataFrame, name: str, period: int, source: str = "close"):
     df[name] = _get_source(df, source).rolling(window=period).mean()
     return df
@@ -137,12 +139,19 @@ def apply_all_indicators(df: pd.DataFrame, cfg):
             continue
 
         try:
+            # Use dot notation (IndicatorConfig has attributes, not dict)
+            period = ind.period if hasattr(ind, "period") else 14
+            source = getattr(ind, "source", "close")
+
             if ind.type.lower() in source_supported:
-                df = func(df, name=ind.name, period=ind.get("period", 14), source=getattr(ind, "source", "close"))
+                df = func(df, name=ind.name, period=period, source=source)
             elif ind.type.lower() == "macd":
-                df = func(df, name=ind.name, fast=ind.get("fast", 12), slow=ind.get("slow", 26), signal=ind.get("signal", 9))
+                fast = getattr(ind, "fast", 12)
+                slow = getattr(ind, "slow", 26)
+                signal = getattr(ind, "signal", 9)
+                df = func(df, name=ind.name, fast=fast, slow=slow, signal=signal, source=source)
             else:
-                df = func(df, name=ind.name, period=ind.get("period", 14))
+                df = func(df, name=ind.name, period=period)
         except Exception as e:
             skipped.append(f"{ind.name} ({ind.type}): {str(e)}")
 
