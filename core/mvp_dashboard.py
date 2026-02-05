@@ -60,8 +60,8 @@ def run_mvp_dashboard():
         timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=3)
         years = st.slider("Years", 0.2, 5.0, 1.5, 0.1)
 
-    # Indicators
-    st.subheader("Indicators")
+    # Indicators builder
+    st.subheader("1. Indicators")
     if "indicators" not in st.session_state:
         st.session_state.indicators = [
             {"name": "ema20", "type": "ema", "period": 20},
@@ -90,15 +90,16 @@ def run_mvp_dashboard():
         st.rerun()
 
     # Entry builder
-    st.subheader("Entry Conditions")
+    st.subheader("2. Entry Conditions")
+    st.markdown("**Long Entry (ALL must be true)**")
     if "entry_long" not in st.session_state:
         st.session_state.entry_long = []
 
     for i, cond in enumerate(st.session_state.entry_long):
         c1, c2, c3, c4 = st.columns([3,1,3,1])
-        with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"el_left{i}")
+        with c1: cond["left"] = st.text_input("Left (indicator or 'close')", cond["left"], key=f"el_left{i}")
         with c2: cond["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(cond["op"]), key=f"el_op{i}")
-        with c3: cond["right"] = st.text_input("Right", cond["right"], key=f"el_right{i}")
+        with c3: cond["right"] = st.text_input("Right (indicator or value)", cond["right"], key=f"el_right{i}")
         with c4:
             if st.button("🗑", key=f"del_el{i}"):
                 st.session_state.entry_long.pop(i)
@@ -108,6 +109,29 @@ def run_mvp_dashboard():
         st.session_state.entry_long.append({"left": "close", "op": ">", "right": "ema20"})
         st.rerun()
 
+    st.markdown("**Short Entry (ALL must be true)**")
+    if "entry_short" not in st.session_state:
+        st.session_state.entry_short = []
+
+    for i, cond in enumerate(st.session_state.entry_short):
+        c1, c2, c3, c4 = st.columns([3,1,3,1])
+        with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"es_left{i}")
+        with c2: cond["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(cond["op"]), key=f"es_op{i}")
+        with c3: cond["right"] = st.text_input("Right", cond["right"], key=f"es_right{i}")
+        with c4:
+            if st.button("🗑", key=f"del_es{i}"):
+                st.session_state.entry_short.pop(i)
+                st.rerun()
+
+    if st.button("＋ Add Short Entry Condition"):
+        st.session_state.entry_short.append({"left": "close", "op": "<", "right": "ema20"})
+        st.rerun()
+
+    # Exit (fixed ATR SL/TP)
+    st.subheader("3. Exit Rules (ATR-based)")
+    st.info("SL/TP multiples (× ATR14) – fixed for now")
+
+    # Run
     if st.button("Run Backtest", type="primary"):
         with st.spinner("Loading data..."):
             df = load_ohlcv(market, timeframe, years)
@@ -127,16 +151,24 @@ def run_mvp_dashboard():
                 ind_cfg.append(item)
 
             entry_long = st.session_state.get("entry_long", [])
-            if not entry_long:
-                st.warning("No entry conditions defined → backtest will produce 0 trades. Add at least one long entry condition above.")
+            entry_short = st.session_state.get("entry_short", [])
+
+            if not entry_long and not entry_short:
+                st.warning("No entry conditions defined → backtest will produce 0 trades. Add at least one long or short condition above.")
 
             cfg_dict = {
                 "name": "User Strategy",
                 "market": market,
                 "timeframe": timeframe,
                 "indicators": ind_cfg,
-                "entry": {"long": [{"all": entry_long}], "short": []},
-                "exit": {"long": [], "short": []},
+                "entry": {
+                    "long": [{"all": entry_long}] if entry_long else [],
+                    "short": [{"all": entry_short}] if entry_short else []
+                },
+                "exit": {
+                    "long": [{"type": "atr_sl", "multiple": 2.0}, {"type": "atr_tp", "multiple": 3.0}],
+                    "short": [{"type": "atr_sl", "multiple": 2.0}, {"type": "atr_tp", "multiple": 3.0}]
+                },
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
 
@@ -148,7 +180,7 @@ def run_mvp_dashboard():
                 for w in skipped:
                     st.warning(w)
 
-            result = run_backtest_v2(df, cfg)
+            result = run_backtest_v2(df, cfg, slippage_pct=0.0008, commission_per_trade=3.0, monte_carlo_runs=500)
 
         metrics = result["metrics"]
         trades_df = result["trades_df"]
