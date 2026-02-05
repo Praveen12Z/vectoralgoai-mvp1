@@ -8,77 +8,66 @@ from polygon import RESTClient
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-@st.cache_data(ttl=3600 * 24, show_spinner="Loading market data...")
+# Correct Polygon tickers (2026)
+MARKET_MAP = {
+    "NAS100": "I:NDX",
+    "US30":   "I:DJI",
+    "SPX500": "I:SPX",
+    "EURUSD": "C:EURUSD",
+    "GBPUSD": "C:GBPUSD",
+    "USDJPY": "C:USDJPY",
+    "AUDUSD": "C:AUDUSD",
+    "USDCAD": "C:USDCAD",
+    "EURJPY": "C:EURJPY",
+    "GBPJPY": "C:GBPJPY",
+    "XAUUSD": "XAUUSD",   # Gold
+    "XAGUSD": "XAGUSD",   # Silver
+}
+
+@st.cache_data(ttl=3600 * 6, show_spinner="Fetching market data...")
 def load_ohlcv(symbol: str, timeframe: str, years: int = 3) -> pd.DataFrame:
-    """
-    Load OHLCV data using Polygon API (via st.secrets).
-    Caches result for 24 hours.
-    """
-    try:
-        api_key = st.secrets["MASSIVE_API_KEY"]
-    except KeyError:
-        st.error("MASSIVE_API_KEY not found in .streamlit/secrets.toml")
+    api_key = st.secrets.get("MASSIVE_API_KEY")
+    if not api_key:
+        st.error("MASSIVE_API_KEY not found in secrets.")
         return pd.DataFrame()
 
     client = RESTClient(api_key)
-
-    MARKET_MAP = {
-        "NAS100": "NDX",
-        "US30": "DJI",
-        "SPX500": "SPX",
-        "XAUUSD": "XAUUSD",
-        "EURUSD": "EURUSD",
-    }
     ticker = MARKET_MAP.get(symbol.upper(), symbol.upper())
 
-    timeframe = timeframe.lower()
-    if timeframe == "1h":
-        multiplier, timespan = 1, "hour"
-    elif timeframe == "4h":
-        multiplier, timespan = 4, "hour"
-    elif timeframe in ("1d", "d", "1day"):
-        multiplier, timespan = 1, "day"
-    else:
-        st.warning(f"Unsupported timeframe '{timeframe}', falling back to 1h")
-        multiplier, timespan = 1, "hour"
+    # Timeframe mapping
+    tf_map = {
+        "1m":  (1, "minute"), "5m": (5, "minute"), "15m": (15, "minute"),
+        "1h":  (1, "hour"),   "4h": (4, "hour"),   "1d":  (1, "day")
+    }
+    mult, span = tf_map.get(timeframe.lower(), (1, "hour"))
 
     from_ = (datetime.utcnow() - timedelta(days=365 * years)).strftime("%Y-%m-%d")
-    to_ = datetime.utcnow().strftime("%Y-%m-%d")
+    to_   = datetime.utcnow().strftime("%Y-%m-%d")
 
     try:
-        aggs = client.list_aggs(
-            ticker,
-            multiplier=multiplier,
-            timespan=timespan,
+        aggs = list(client.list_aggs(
+            ticker=ticker,
+            multiplier=mult,
+            timespan=span,
             from_=from_,
             to=to_,
             limit=50000,
             adjusted=True
-        )
+        ))
 
-        data = []
-        for agg in aggs:
-            data.append({
-                "timestamp": pd.to_datetime(agg.timestamp, unit="ms"),
-                "open": agg.open,
-                "high": agg.high,
-                "low": agg.low,
-                "close": agg.close,
-                "volume": agg.volume
-            })
-
-        if not data:
-            st.warning("No data returned from Polygon")
+        if not aggs:
+            st.warning(f"No data returned for {symbol} ({ticker})")
             return pd.DataFrame()
 
-        df = pd.DataFrame(data).set_index("timestamp").sort_index()
-        
-        # Simple cache to disk (optional – helps in development)
-        cache_path = os.path.join(DATA_DIR, f"{symbol.upper()}_{timeframe}.csv")
-        df.to_csv(cache_path)
+        df = pd.DataFrame([{
+            "timestamp": pd.to_datetime(a.timestamp, unit="ms"),
+            "open": a.open, "high": a.high, "low": a.low,
+            "close": a.close, "volume": a.volume
+        } for a in aggs])
 
+        df = df.set_index("timestamp").sort_index()
         return df
 
     except Exception as e:
-        st.error(f"Polygon API error: {str(e)}")
+        st.error(f"Polygon error for {symbol} ({ticker}): {str(e)}")
         return pd.DataFrame()
