@@ -12,7 +12,7 @@ from .auth import authenticate_user, register_user
 from .strategy_store import load_user_strategies, save_user_strategy, delete_user_strategy
 
 # ──────────────────────────────────────────────────────────────
-# CONSTANTS
+# CONSTANTS & UI OPTIONS
 # ──────────────────────────────────────────────────────────────
 MARKETS = [
     "NAS100", "US30", "SPX500",
@@ -26,13 +26,13 @@ TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"]
 OPERATORS = [">", "<", ">=", "<=", "=="]
 
 # ──────────────────────────────────────────────────────────────
-# DASHBOARD MAIN FUNCTION
+# MAIN DASHBOARD
 # ──────────────────────────────────────────────────────────────
 def run_mvp_dashboard():
     st.title("VectorAlgoAI – Crash-Test Lab **V4**")
-    st.caption("Regime-aware • Slippage • Commissions • Monte Carlo • Indicator impact")
+    st.caption("Regime filter • Slippage • Commissions • Monte Carlo • Per-indicator impact")
 
-    # ───── AUTH (keep your existing login/register here) ─────
+    # ───── AUTHENTICATION ─────
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.email = None
@@ -77,7 +77,7 @@ def run_mvp_dashboard():
         timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=3)
         years = st.slider("Years of History", 0.2, 5.0, 1.5, 0.1)
 
-        st.info("Free Polygon tier is very limited — wait 5–15 min between heavy tests.")
+        st.info("Free Polygon tier → very limited calls. Wait 5–15 min between tests.")
 
     # ───── INDICATOR BUILDER ─────
     st.subheader("1. Indicators")
@@ -167,13 +167,13 @@ def run_mvp_dashboard():
 
             cfg = parse_strategy_yaml(str(cfg_dict))
 
-            df = apply_all_indicators(df, cfg)
+            # Apply indicators – now returns (df, skipped)
+            df, skipped_indicators = apply_all_indicators(df, cfg)
 
-            # Show skipped indicators from session state
-            if "indicator_skipped_warnings" in st.session_state:
-                for warn in st.session_state["indicator_skipped_warnings"]:
+            # Show skipped indicators safely here (in UI thread)
+            if skipped_indicators:
+                for warn in skipped_indicators:
                     st.warning(warn)
-                del st.session_state["indicator_skipped_warnings"]
 
             # Run backtest
             result = run_backtest_v2(
@@ -184,7 +184,7 @@ def run_mvp_dashboard():
                 monte_carlo_runs=800
             )
 
-        # ───── RESULTS DISPLAY ─────
+        # ───── RESULTS ─────
         metrics = result["metrics"]
         trades_df = result["trades_df"]
         equity_series = result["equity_series"]
@@ -195,9 +195,9 @@ def run_mvp_dashboard():
 
         # Core metrics
         cols = st.columns(5)
-        cols[0].metric("Return", f"{metrics['total_return_pct']:.2f}%")
-        cols[1].metric("PF", f"{metrics['profit_factor']:.2f}")
-        cols[2].metric("Win %", f"{metrics['win_rate_pct']:.1f}")
+        cols[0].metric("Total Return", f"{metrics['total_return_pct']:.2f}%")
+        cols[1].metric("Profit Factor", f"{metrics['profit_factor']:.2f}")
+        cols[2].metric("Win Rate", f"{metrics['win_rate_pct']:.1f}%")
         cols[3].metric("Max DD", f"{metrics['max_drawdown_pct']:.1f}%")
         cols[4].metric("Trades", metrics["num_trades"])
 
@@ -207,7 +207,7 @@ def run_mvp_dashboard():
 
         # Monte Carlo
         if mc:
-            st.subheader("Monte Carlo (800 runs)")
+            st.subheader("Monte Carlo Robustness (800 runs)")
             c1, c2, c3 = st.columns(3)
             c1.metric("Mean Return", f"{mc['mean_return']:.2f}%")
             c2.metric("Median Return", f"{mc['median_return']:.2f}%")
@@ -215,7 +215,7 @@ def run_mvp_dashboard():
 
         # Regime stats
         if regime_stats:
-            st.subheader("Performance by Regime")
+            st.subheader("Performance by Market Regime")
             st.dataframe(pd.DataFrame(regime_stats))
 
         # Per-indicator impact
@@ -238,7 +238,7 @@ def run_mvp_dashboard():
 
         # Save strategy
         if st.button("💾 Save Strategy"):
-            name = st.text_input("Strategy Name", "V4 Custom")
+            name = st.text_input("Strategy Name", "V4 Custom Strategy")
             yaml_text = f"""name: "{name}"
 market: "{market}"
 timeframe: "{timeframe}"
