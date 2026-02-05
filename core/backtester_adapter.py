@@ -17,19 +17,19 @@ class Position:
 
 def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
     raw = cfg.raw
-    entry_long = raw.get("entry", {}).get("long", [])
-    entry_short = raw.get("entry", {}).get("short", [])
+    entry_long_conds = raw.get("entry", {}).get("long", [])
+    entry_short_conds = raw.get("entry", {}).get("short", [])
 
     capital = float(raw["risk"].get("capital", 10000))
     risk_pct = float(raw["risk"].get("risk_per_trade_pct", 1.0)) / 100
 
     position = None
     trades = []
-    equity = [capital]   # start with initial capital
+    equity = [capital]
 
     for ts, row in df.iterrows():
         close = float(row["close"])
-        equity.append(capital)   # append BEFORE logic
+        equity.append(capital)
 
         # Exit
         if position:
@@ -50,9 +50,9 @@ def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
 
         # Entry
         if not position:
-            if _check_conditions(row, entry_long):
+            if _check_conditions(row, entry_long_conds):
                 position = Position("long", ts, close, close - 50, close + 100, 1.0)
-            elif _check_conditions(row, entry_short):
+            elif _check_conditions(row, entry_short_conds):
                 position = Position("short", ts, close, close + 50, close - 100, 1.0)
 
     trades_df = pd.DataFrame(trades)
