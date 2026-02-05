@@ -3,10 +3,10 @@ import numpy as np
 
 def _get_source(df: pd.DataFrame, source: str = "close") -> pd.Series:
     if source not in df.columns:
-        raise ValueError(f"Source column '{source}' not found")
+        raise ValueError(f"Source column '{source}' not found in DataFrame")
     return df[source]
 
-# ───────────────────── INDICATOR DEFINITIONS ─────────────────────
+# ───────────────────── INDICATOR FUNCTIONS ─────────────────────
 
 def sma(df: pd.DataFrame, name: str, period: int, source: str = "close"):
     df[name] = _get_source(df, source).rolling(window=period).mean()
@@ -88,8 +88,9 @@ def supertrend(df: pd.DataFrame, name: str, period: int = 10, multiplier: float 
     atr_val = atr(df.copy(), "atr_temp", period)["atr_temp"]
     upper = hl2 + multiplier * atr_val
     lower = hl2 - multiplier * atr_val
+    # Very basic version — real SuperTrend has trend direction flip logic
     df[name + "_supertrend"] = np.where(df["close"] > upper.shift(), lower, upper)
-    return df  # basic version; can be extended
+    return df
 
 def vwap(df: pd.DataFrame, name: str):
     tp = (df["high"] + df["low"] + df["close"]) / 3
@@ -97,8 +98,8 @@ def vwap(df: pd.DataFrame, name: str):
     return df
 
 def psar(df: pd.DataFrame, name: str, af_start: float = 0.02, af_max: float = 0.2):
-    # Simplified placeholder (full PSAR is more complex)
-    df[name] = df["close"].rolling(10).mean()  # stub – replace with real PSAR if needed
+    # Simplified placeholder — full PSAR implementation is more involved
+    df[name] = df["close"].rolling(10).mean()
     return df
 
 def willr(df: pd.DataFrame, name: str, period: int = 14):
@@ -122,7 +123,7 @@ def mfi(df: pd.DataFrame, name: str, period: int = 14):
     return df
 
 # ──────────────────────────────────────────────────────────────
-# REGISTRY
+# REGISTRY (all defined functions are here)
 # ──────────────────────────────────────────────────────────────
 INDICATOR_REGISTRY = {
     "sma": sma,
@@ -144,18 +145,18 @@ INDICATOR_REGISTRY = {
 }
 
 # ──────────────────────────────────────────────────────────────
-# SAFE APPLY FUNCTION
+# SAFE APPLY FUNCTION — no st. calls inside!
 # ──────────────────────────────────────────────────────────────
 def apply_all_indicators(df: pd.DataFrame, cfg):
     df = df.copy()
 
-    # Indicators that accept 'source'
     source_supported = {"sma", "ema", "rsi", "macd", "bbands"}
 
+    skipped = []
     for ind in cfg.indicators:
         func = INDICATOR_REGISTRY.get(ind.type.lower())
         if not func:
-            st.warning(f"Unknown indicator: {ind.type}")
+            skipped.append(f"Unknown type: {ind.type}")
             continue
 
         try:
@@ -163,10 +164,11 @@ def apply_all_indicators(df: pd.DataFrame, cfg):
                 df = func(df, name=ind.name, period=ind.period, source=getattr(ind, "source", "close"))
             else:
                 df = func(df, name=ind.name, period=ind.period)
-        except TypeError as te:
-            st.warning(f"Indicator {ind.name} ({ind.type}) skipped: {str(te)}")
         except Exception as e:
-            st.error(f"Error applying {ind.name}: {str(e)}")
+            skipped.append(f"{ind.name} ({ind.type}): {str(e)}")
+
+    # Move warnings to caller (dashboard) — never call st. from here
+    if skipped:
+        st.session_state["indicator_skipped_warnings"] = skipped
 
     return df
-
