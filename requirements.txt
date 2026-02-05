@@ -1,9 +1,7 @@
-#streamlit>=1.32.0
+streamlit>=1.32.0
 pandas>=2.0
 plotly>=5.18
 pyyaml>=6.0
 python-dotenv>=1.0
 polygon-api-client>=1.13.0
-numpy>=2.0.0                  # Critical: modern version with Python 3.13 wheels
-dill==0.3.7
-
+numpy>=2.0.0
