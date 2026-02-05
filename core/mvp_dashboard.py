@@ -75,9 +75,9 @@ def run_mvp_dashboard():
             ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"type{i}")
         with c3:
             if ind["type"] == "macd":
-                ind["fast"] = st.number_input("Fast", 5, 50, 12, key=f"fast{i}")
-                ind["slow"] = st.number_input("Slow", 10, 100, 26, key=f"slow{i}")
-                ind["signal"] = st.number_input("Signal", 3, 30, 9, key=f"signal{i}")
+                ind["fast"] = st.number_input("Fast", 5, 50, ind.get("fast", 12), key=f"fast{i}")
+                ind["slow"] = st.number_input("Slow", 10, 100, ind.get("slow", 26), key=f"slow{i}")
+                ind["signal"] = st.number_input("Signal", 3, 30, ind.get("signal", 9), key=f"signal{i}")
             else:
                 ind["period"] = st.number_input("Period", 1, 300, ind.get("period", 14), key=f"per{i}")
         with c4:
@@ -101,14 +101,14 @@ def run_mvp_dashboard():
         with st.spinner("Running backtest..."):
             ind_cfg = []
             for i in st.session_state.indicators:
-                cfg_item = {"name": i["name"], "type": i["type"]}
+                item = {"name": i["name"], "type": i["type"]}
                 if i["type"] == "macd":
-                    cfg_item["fast"] = i.get("fast", 12)
-                    cfg_item["slow"] = i.get("slow", 26)
-                    cfg_item["signal"] = i.get("signal", 9)
+                    item["fast"] = i.get("fast", 12)
+                    item["slow"] = i.get("slow", 26)
+                    item["signal"] = i.get("signal", 9)
                 else:
-                    cfg_item["period"] = i.get("period", 14)
-                ind_cfg.append(cfg_item)
+                    item["period"] = i.get("period", 14)
+                ind_cfg.append(item)
 
             cfg_dict = {
                 "name": "V4 Test",
@@ -160,3 +160,7 @@ def run_mvp_dashboard():
         else:
             st.info("No trades → no correlation calculated")
 
+        if st.button("Save Strategy"):
+            name = st.text_input("Name", "V4 Strategy")
+            ok, msg = save_user_strategy(st.session_state.email, name, str(cfg_dict))
+            st.success(msg) if ok else st.error(msg)
