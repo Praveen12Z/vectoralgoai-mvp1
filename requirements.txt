@@ -1,22 +1,9 @@
-# Python version
-# Recommended: Python 3.9
-
-numpy==1.23.5
-pandas==1.5.3
-matplotlib==3.7.1
-seaborn==0.12.2
-scikit-learn==1.2.2
-scipy==1.10.1
-
-# Deep Learning
-tensorflow==2.11.0
-keras==2.11.0
-
-# Time series & statistics
-statsmodels==0.13.5
-pandas-datareader==0.10.0
-pmdarima==2.0.3
-yfinance==0.2.31
-
-# Utilities
+#streamlit>=1.32.0
+pandas>=2.0
+plotly>=5.18
+pyyaml>=6.0
+python-dotenv>=1.0
+polygon-api-client>=1.13.0
+numpy>=2.0.0                  # Critical: modern version with Python 3.13 wheels
 dill==0.3.7
+
