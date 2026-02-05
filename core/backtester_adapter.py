@@ -24,9 +24,6 @@ def run_backtest_v2(
     commission_per_trade: float = 3.0,
     monte_carlo_runs: int = 800
 ) -> Dict[str, Any]:
-    """
-    V4 backtester – fixed index length bug, realistic costs, regime filter, MC
-    """
     raw = cfg.raw
     entry_long_conds = raw.get("entry", {}).get("long", [])
     entry_short_conds = raw.get("entry", {}).get("short", [])
@@ -38,27 +35,22 @@ def run_backtest_v2(
 
     position: Optional[Position] = None
     trades: List[Dict] = []
-    equity = []                 # ← start empty – append per bar
-    regimes = []                # per-bar regime
+    equity = [capital]  # start with initial capital
+    regimes = []
 
-    # Regime (ADX > 25 = trend)
     if "adx" not in df.columns:
-        df["adx"] = 0  # fallback
+        df["adx"] = 0
     df["regime"] = np.where(df["adx"] > 25, "trend", "chop")
 
-    for i, (ts, row) in enumerate(df.iterrows()):
+    for ts, row in df.iterrows():
         close = float(row["close"])
         regime = row["regime"]
         regimes.append(regime)
 
-        # Append current equity **at the start of the bar**
-        equity.append(capital)
-
-        # ───── EXIT ─────
+        # Exit
         if position:
             exit_hit = False
             reason = ""
-
             if position.direction == "long":
                 if position.sl is not None and close <= position.sl:
                     exit_hit, reason = True, "SL"
@@ -90,7 +82,7 @@ def run_backtest_v2(
                 capital += pnl
                 position = None
 
-        # ───── ENTRY ───── (only in trend)
+        # Entry
         if not position and regime == "trend":
             entered = False
             sl_val = tp_val = None
@@ -124,11 +116,10 @@ def run_backtest_v2(
                     entry_regime=regime
                 )
 
-    # Final equity point (after last bar)
-    equity.append(capital)
+        equity.append(capital)
 
-    # Create equity series with correct index length
-    equity_series = pd.Series(equity, index=df.index.append(pd.Index([df.index[-1] + pd.Timedelta(1, "D")])) if len(equity) == len(df) + 1 else df.index)
+    # Equity series – length now matches df + 1 (initial + after each bar)
+    equity_series = pd.Series(equity, index=df.index.insert(0, df.index[0] - pd.Timedelta(1, "D")))
 
     trades_df = pd.DataFrame(trades)
 
@@ -142,7 +133,7 @@ def run_backtest_v2(
             "regime_stats": {}
         }
 
-    # ───── METRICS ─────
+    # Metrics
     peak = equity_series.cummax()
     dd = (equity_series - peak) / peak
     max_dd_pct = float(dd.min() * 100)
@@ -167,7 +158,7 @@ def run_backtest_v2(
         "grade": grade
     }
 
-    # ───── MONTE CARLO ─────
+    # Monte Carlo
     monte_carlo = {}
     if monte_carlo_runs > 0 and not trades_df.empty:
         returns = trades_df["pnl"] / capital
@@ -185,7 +176,6 @@ def run_backtest_v2(
             "runs": monte_carlo_runs
         }
 
-    # ───── REGIME STATS ─────
     regime_stats = trades_df.groupby("regime")["pnl"].agg(["sum", "count", "mean", "std"]).round(2).to_dict()
 
     return {
