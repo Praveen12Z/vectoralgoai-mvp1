@@ -56,7 +56,8 @@ def run_backtest_v2(df: pd.DataFrame, cfg: StrategyConfig) -> Dict[str, Any]:
                 position = Position("short", ts, close, close + 50, close - 100, 1.0)
 
     trades_df = pd.DataFrame(trades)
-    equity_series = pd.Series(equity, index=df.index[:len(equity)])
+        # FIXED: correct length handling
+    equity_series = pd.Series(equity, index=df.index.to_list() + [df.index[-1] + pd.Timedelta(1, "D")])
 
     if trades_df.empty:
         return {
@@ -90,3 +91,4 @@ def _check_conditions(row, conds):
         if op == "<=" and left > right: return False
         if op == "==" and left != right: return False
     return True
+
