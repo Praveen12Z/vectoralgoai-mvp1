@@ -3,7 +3,7 @@ import numpy as np
 
 def _get_source(df: pd.DataFrame, source: str = "close") -> pd.Series:
     if source not in df.columns:
-        raise ValueError(f"Source column '{source}' not found in DataFrame")
+        raise ValueError(f"Source '{source}' not found")
     return df[source]
 
 # ───────────────────── INDICATOR FUNCTIONS ─────────────────────
@@ -88,7 +88,6 @@ def supertrend(df: pd.DataFrame, name: str, period: int = 10, multiplier: float 
     atr_val = atr(df.copy(), "atr_temp", period)["atr_temp"]
     upper = hl2 + multiplier * atr_val
     lower = hl2 - multiplier * atr_val
-    # Basic version – can be improved later
     df[name + "_supertrend"] = np.where(df["close"] > upper.shift(), lower, upper)
     return df
 
@@ -98,8 +97,7 @@ def vwap(df: pd.DataFrame, name: str):
     return df
 
 def psar(df: pd.DataFrame, name: str, af_start: float = 0.02, af_max: float = 0.2):
-    # Placeholder – full PSAR logic is longer, this is stub for now
-    df[name] = df["close"].rolling(10).mean()
+    df[name] = df["close"].rolling(10).mean()  # placeholder – full PSAR later
     return df
 
 def willr(df: pd.DataFrame, name: str, period: int = 14):
@@ -123,29 +121,17 @@ def mfi(df: pd.DataFrame, name: str, period: int = 14):
     return df
 
 # ──────────────────────────────────────────────────────────────
-# REGISTRY – all functions defined above
+# REGISTRY
 # ──────────────────────────────────────────────────────────────
 INDICATOR_REGISTRY = {
-    "sma": sma,
-    "ema": ema,
-    "rsi": rsi,
-    "atr": atr,
-    "macd": macd,
-    "bbands": bbands,
-    "stoch": stoch,
-    "adx": adx,
-    "cci": cci,
-    "obv": obv,
-    "supertrend": supertrend,
-    "vwap": vwap,
-    "psar": psar,
-    "willr": willr,
-    "roc": roc,
-    "mfi": mfi,
+    "sma": sma, "ema": ema, "rsi": rsi, "atr": atr,
+    "macd": macd, "bbands": bbands, "stoch": stoch,
+    "adx": adx, "cci": cci, "obv": obv, "supertrend": supertrend,
+    "vwap": vwap, "psar": psar, "willr": willr, "roc": roc, "mfi": mfi,
 }
 
 # ──────────────────────────────────────────────────────────────
-# APPLY FUNCTION – returns (df, skipped list) – no st. calls
+# APPLY FUNCTION – returns (df, skipped list)
 # ──────────────────────────────────────────────────────────────
 def apply_all_indicators(df: pd.DataFrame, cfg):
     df = df.copy()
@@ -155,14 +141,18 @@ def apply_all_indicators(df: pd.DataFrame, cfg):
     for ind in cfg.indicators:
         func = INDICATOR_REGISTRY.get(ind.type.lower())
         if not func:
-            skipped.append(f"Unknown indicator type: {ind.type}")
+            skipped.append(f"Unknown type: {ind.type}")
             continue
 
         try:
             if ind.type.lower() in source_supported:
                 df = func(df, name=ind.name, period=ind.period, source=getattr(ind, "source", "close"))
             else:
-                df = func(df, name=ind.name, period=ind.period)
+                # For indicators that don't take 'period' or 'source'
+                if ind.type.lower() == "macd":
+                    df = func(df, name=ind.name, fast=12, slow=26, signal=9)
+                else:
+                    df = func(df, name=ind.name, period=ind.period)
         except Exception as e:
             skipped.append(f"{ind.name} ({ind.type}): {str(e)}")
 
