@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import numpy as np
 
 from .data_loader import load_ohlcv
 from .indicators import apply_all_indicators, INDICATOR_REGISTRY
@@ -69,15 +68,13 @@ def run_mvp_dashboard():
 
     for i, ind in enumerate(st.session_state.indicators):
         c1, c2, c3, c4 = st.columns([3,2,2,1])
-        with c1:
-            ind["name"] = st.text_input("Name", ind["name"], key=f"name{i}")
-        with c2:
-            ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"type{i}")
+        with c1: ind["name"] = st.text_input("Name", ind["name"], key=f"name{i}")
+        with c2: ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"type{i}")
         with c3:
             if ind["type"] == "macd":
-                ind["fast"] = st.number_input("Fast", 5, 50, ind.get("fast", 12), key=f"fast{i}")
-                ind["slow"] = st.number_input("Slow", 10, 100, ind.get("slow", 26), key=f"slow{i}")
-                ind["signal"] = st.number_input("Signal", 3, 30, ind.get("signal", 9), key=f"signal{i}")
+                ind["fast"] = st.number_input("Fast", 5, 50, 12, key=f"fast{i}")
+                ind["slow"] = st.number_input("Slow", 10, 100, 26, key=f"slow{i}")
+                ind["signal"] = st.number_input("Signal", 3, 30, 9, key=f"signal{i}")
             else:
                 ind["period"] = st.number_input("Period", 1, 300, ind.get("period", 14), key=f"per{i}")
         with c4:
@@ -90,7 +87,7 @@ def run_mvp_dashboard():
         st.rerun()
 
     st.subheader("Entry & Exit (placeholder)")
-    st.info("Entry/exit conditions not implemented yet – backtest may give 0 trades")
+    st.info("Entry/exit conditions not implemented yet")
 
     if st.button("Run Backtest", type="primary"):
         with st.spinner("Loading data..."):
@@ -99,6 +96,11 @@ def run_mvp_dashboard():
                 st.stop()
 
         with st.spinner("Running backtest..."):
+            # Temporary default entry to generate trades
+            if not st.session_state.get("entry_long") and not st.session_state.get("entry_short"):
+                st.info("No entry conditions → adding default: close > ema20 (long)")
+                st.session_state.entry_long = [{"left": "close", "op": ">", "right": "ema20"}]
+
             ind_cfg = []
             for i in st.session_state.indicators:
                 item = {"name": i["name"], "type": i["type"]}
@@ -115,7 +117,7 @@ def run_mvp_dashboard():
                 "market": market,
                 "timeframe": timeframe,
                 "indicators": ind_cfg,
-                "entry": {"long": [], "short": []},
+                "entry": {"long": st.session_state.get("entry_long", []), "short": st.session_state.get("entry_short", [])},
                 "exit": {"long": [], "short": []},
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
