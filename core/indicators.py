@@ -88,7 +88,7 @@ def supertrend(df: pd.DataFrame, name: str, period: int = 10, multiplier: float 
     atr_val = atr(df.copy(), "atr_temp", period)["atr_temp"]
     upper = hl2 + multiplier * atr_val
     lower = hl2 - multiplier * atr_val
-    # Very basic version — real SuperTrend has trend direction flip logic
+    # Basic version – can be improved later
     df[name + "_supertrend"] = np.where(df["close"] > upper.shift(), lower, upper)
     return df
 
@@ -98,7 +98,7 @@ def vwap(df: pd.DataFrame, name: str):
     return df
 
 def psar(df: pd.DataFrame, name: str, af_start: float = 0.02, af_max: float = 0.2):
-    # Simplified placeholder — full PSAR implementation is more involved
+    # Placeholder – full PSAR logic is longer, this is stub for now
     df[name] = df["close"].rolling(10).mean()
     return df
 
@@ -123,7 +123,7 @@ def mfi(df: pd.DataFrame, name: str, period: int = 14):
     return df
 
 # ──────────────────────────────────────────────────────────────
-# REGISTRY (all defined functions are here)
+# REGISTRY – all functions defined above
 # ──────────────────────────────────────────────────────────────
 INDICATOR_REGISTRY = {
     "sma": sma,
@@ -145,18 +145,17 @@ INDICATOR_REGISTRY = {
 }
 
 # ──────────────────────────────────────────────────────────────
-# SAFE APPLY FUNCTION — no st. calls inside!
+# APPLY FUNCTION – returns (df, skipped list) – no st. calls
 # ──────────────────────────────────────────────────────────────
 def apply_all_indicators(df: pd.DataFrame, cfg):
     df = df.copy()
-
     source_supported = {"sma", "ema", "rsi", "macd", "bbands"}
-
     skipped = []
+
     for ind in cfg.indicators:
         func = INDICATOR_REGISTRY.get(ind.type.lower())
         if not func:
-            skipped.append(f"Unknown type: {ind.type}")
+            skipped.append(f"Unknown indicator type: {ind.type}")
             continue
 
         try:
@@ -167,8 +166,4 @@ def apply_all_indicators(df: pd.DataFrame, cfg):
         except Exception as e:
             skipped.append(f"{ind.name} ({ind.type}): {str(e)}")
 
-    # Move warnings to caller (dashboard) — never call st. from here
-    if skipped:
-        st.session_state["indicator_skipped_warnings"] = skipped
-
-    return df
+    return df, skipped
