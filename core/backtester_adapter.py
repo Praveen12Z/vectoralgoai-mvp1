@@ -20,43 +20,39 @@ class Position:
 def run_backtest_v2(
     df: pd.DataFrame,
     cfg: StrategyConfig,
-    slippage_pct: float = 0.0008,          # realistic slippage (0.08%)
-    commission_per_trade: float = 3.0,     # fixed $ per trade
-    monte_carlo_runs: int = 800            # default MC runs
+    slippage_pct: float = 0.0008,
+    commission_per_trade: float = 3.0,
+    monte_carlo_runs: int = 800
 ) -> Dict[str, Any]:
     """
-    V4 backtester:
-    - Candle-by-candle execution
-    - Slippage & commission simulation
-    - Regime filter (ADX > 25 = trend only)
-    - Monte Carlo robustness
-    - Returns equity series, trades DF, MC results, regime stats
+    V4 backtester – fixed index length bug, realistic costs, regime filter, MC
     """
-
     raw = cfg.raw
     entry_long_conds = raw.get("entry", {}).get("long", [])
     entry_short_conds = raw.get("entry", {}).get("short", [])
     exit_long_conds = raw.get("exit", {}).get("long", [])
     exit_short_conds = raw.get("exit", {}).get("short", [])
 
-    capital_start = float(raw["risk"].get("capital", 10000))
+    capital = float(raw["risk"].get("capital", 10000))
     risk_pct = float(raw["risk"].get("risk_per_trade_pct", 1.0)) / 100
 
     position: Optional[Position] = None
     trades: List[Dict] = []
-    equity = [capital_start]
-    regimes = []  # track regime at each bar
+    equity = []                 # ← start empty – append per bar
+    regimes = []                # per-bar regime
 
-    # ───── Regime detection (simple ADX proxy) ─────
+    # Regime (ADX > 25 = trend)
     if "adx" not in df.columns:
-        df["adx"] = 0  # fallback if not calculated
+        df["adx"] = 0  # fallback
     df["regime"] = np.where(df["adx"] > 25, "trend", "chop")
 
-    for ts, row in df.iterrows():
+    for i, (ts, row) in enumerate(df.iterrows()):
         close = float(row["close"])
         regime = row["regime"]
-
         regimes.append(regime)
+
+        # Append current equity **at the start of the bar**
+        equity.append(capital)
 
         # ───── EXIT ─────
         if position:
@@ -65,25 +61,20 @@ def run_backtest_v2(
 
             if position.direction == "long":
                 if position.sl is not None and close <= position.sl:
-                    exit_hit = True
-                    reason = "SL"
+                    exit_hit, reason = True, "SL"
                 elif position.tp is not None and close >= position.tp:
-                    exit_hit = True
-                    reason = "TP"
-            else:  # short
+                    exit_hit, reason = True, "TP"
+            else:
                 if position.sl is not None and close >= position.sl:
-                    exit_hit = True
-                    reason = "SL"
+                    exit_hit, reason = True, "SL"
                 elif position.tp is not None and close <= position.tp:
-                    exit_hit = True
-                    reason = "TP"
+                    exit_hit, reason = True, "TP"
 
             if exit_hit:
-                # Apply slippage on exit
                 exit_price = close * (1 - slippage_pct if position.direction == "long" else 1 + slippage_pct)
                 pnl = (exit_price - position.entry_price) * position.size if position.direction == "long" else \
                       (position.entry_price - exit_price) * position.size
-                pnl -= commission_per_trade  # fixed commission
+                pnl -= commission_per_trade
 
                 trades.append({
                     "entry_time": position.entry_time,
@@ -96,10 +87,10 @@ def run_backtest_v2(
                     "reason": reason,
                     "regime": position.entry_regime
                 })
-                capital_start += pnl
+                capital += pnl
                 position = None
 
-        # ───── ENTRY ───── (only in trend regime)
+        # ───── ENTRY ───── (only in trend)
         if not position and regime == "trend":
             entered = False
             sl_val = tp_val = None
@@ -111,7 +102,6 @@ def run_backtest_v2(
                 atr = row.get("atr14", (row["high"] - row["low"]) * 1.5)
                 sl_val = close - 2.0 * atr
                 tp_val = close + 3.5 * atr
-
             elif _check_conditions(row, entry_short_conds):
                 direction = "short"
                 entered = True
@@ -120,7 +110,7 @@ def run_backtest_v2(
                 tp_val = close - 3.5 * atr
 
             if entered:
-                risk_amount = capital_start * risk_pct
+                risk_amount = capital * risk_pct
                 risk_distance = abs(close - sl_val)
                 size = risk_amount / risk_distance if risk_distance > 0 else 1.0
 
@@ -134,29 +124,25 @@ def run_backtest_v2(
                     entry_regime=regime
                 )
 
-        equity.append(capital_start)
+    # Final equity point (after last bar)
+    equity.append(capital)
 
-    # ───── Build results ─────
+    # Create equity series with correct index length
+    equity_series = pd.Series(equity, index=df.index.append(pd.Index([df.index[-1] + pd.Timedelta(1, "D")])) if len(equity) == len(df) + 1 else df.index)
+
     trades_df = pd.DataFrame(trades)
-    equity_series = pd.Series(equity, index=df.index[:len(equity)])
 
     if trades_df.empty:
         return {
-            "metrics": {
-                "total_return_pct": 0.0,
-                "profit_factor": 0.0,
-                "win_rate_pct": 0.0,
-                "max_drawdown_pct": 0.0,
-                "num_trades": 0,
-                "grade": "D"
-            },
+            "metrics": {"total_return_pct": 0.0, "profit_factor": 0.0, "win_rate_pct": 0.0,
+                        "max_drawdown_pct": 0.0, "num_trades": 0, "grade": "D"},
             "trades_df": pd.DataFrame(),
             "equity_series": equity_series,
             "monte_carlo": {},
             "regime_stats": {}
         }
 
-    # Core metrics
+    # ───── METRICS ─────
     peak = equity_series.cummax()
     dd = (equity_series - peak) / peak
     max_dd_pct = float(dd.min() * 100)
@@ -184,13 +170,13 @@ def run_backtest_v2(
     # ───── MONTE CARLO ─────
     monte_carlo = {}
     if monte_carlo_runs > 0 and not trades_df.empty:
-        returns = trades_df["pnl"] / capital_start  # normalized returns
+        returns = trades_df["pnl"] / capital
         mc_returns = []
         for _ in range(monte_carlo_runs):
             shuffled = returns.sample(frac=1, replace=True).values
-            noise = np.random.normal(0, 0.0005, len(shuffled))  # extra realism
-            sim_path = np.cumprod(1 + shuffled + noise) - 1
-            mc_returns.append(sim_path[-1] * 100)
+            noise = np.random.normal(0, 0.0005, len(shuffled))
+            sim = np.cumprod(1 + shuffled + noise) - 1
+            mc_returns.append(sim[-1] * 100)
         monte_carlo = {
             "mean_return": np.mean(mc_returns),
             "median_return": np.median(mc_returns),
