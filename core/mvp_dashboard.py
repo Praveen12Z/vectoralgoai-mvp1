@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import numpy as np
 
 from .data_loader import load_ohlcv
 from .indicators import apply_all_indicators, INDICATOR_REGISTRY
@@ -89,10 +88,11 @@ def run_mvp_dashboard():
         st.session_state.indicators.append({"name": f"ind{len(st.session_state.indicators)+1}", "type": "ema", "period": 20})
         st.rerun()
 
-    # Entry builder – simple version to generate trades
-    st.subheader("Entry Conditions (simple – expand later)")
+    # Entry builder
+    st.subheader("Entry Conditions (simple)")
     if "entry_long" not in st.session_state:
         st.session_state.entry_long = []
+
     for i, cond in enumerate(st.session_state.entry_long):
         c1, c2, c3, c4 = st.columns([3,1,3,1])
         with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"el_left{i}")
@@ -107,14 +107,13 @@ def run_mvp_dashboard():
         st.session_state.entry_long.append({"left": "close", "op": ">", "right": "ema20"})
         st.rerun()
 
-    # Run backtest
     if st.button("Run Backtest", type="primary"):
-        with st.spinner("Loading data..."):
+        with st.spinner("Loading..."):
             df = load_ohlcv(market, timeframe, years)
             if df.empty:
                 st.stop()
 
-        with st.spinner("Running..."):
+        with st.spinner("Backtesting..."):
             ind_cfg = []
             for i in st.session_state.indicators:
                 item = {"name": i["name"], "type": i["type"]}
