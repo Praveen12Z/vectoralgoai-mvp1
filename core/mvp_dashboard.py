@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
 from .data_loader import load_ohlcv
 from .indicators import apply_all_indicators, INDICATOR_REGISTRY
@@ -11,6 +12,7 @@ from .strategy_store import load_user_strategies, save_user_strategy, delete_use
 
 MARKETS = ["NAS100", "US30", "SPX500", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD"]
 TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"]
+OPERATORS = [">", "<", ">=", "<=", "=="]
 
 def run_mvp_dashboard():
     st.title("VectorAlgoAI – Crash-Test Lab **V4**")
@@ -58,6 +60,7 @@ def run_mvp_dashboard():
         timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=3)
         years = st.slider("Years", 0.2, 5.0, 1.5, 0.1)
 
+    # Indicators
     st.subheader("Indicators")
     if "indicators" not in st.session_state:
         st.session_state.indicators = [
@@ -86,21 +89,32 @@ def run_mvp_dashboard():
         st.session_state.indicators.append({"name": f"ind{len(st.session_state.indicators)+1}", "type": "ema", "period": 20})
         st.rerun()
 
-    st.subheader("Entry & Exit (placeholder)")
-    st.info("Entry/exit conditions not implemented yet")
+    # Entry builder – simple version to generate trades
+    st.subheader("Entry Conditions (simple – expand later)")
+    if "entry_long" not in st.session_state:
+        st.session_state.entry_long = []
+    for i, cond in enumerate(st.session_state.entry_long):
+        c1, c2, c3, c4 = st.columns([3,1,3,1])
+        with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"el_left{i}")
+        with c2: cond["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(cond["op"]), key=f"el_op{i}")
+        with c3: cond["right"] = st.text_input("Right", cond["right"], key=f"el_right{i}")
+        with c4:
+            if st.button("🗑", key=f"del_el{i}"):
+                st.session_state.entry_long.pop(i)
+                st.rerun()
 
+    if st.button("＋ Add Long Entry"):
+        st.session_state.entry_long.append({"left": "close", "op": ">", "right": "ema20"})
+        st.rerun()
+
+    # Run backtest
     if st.button("Run Backtest", type="primary"):
         with st.spinner("Loading data..."):
             df = load_ohlcv(market, timeframe, years)
             if df.empty:
                 st.stop()
 
-        with st.spinner("Running backtest..."):
-            # Temporary default entry to generate trades
-            if not st.session_state.get("entry_long") and not st.session_state.get("entry_short"):
-                st.info("No entry conditions → adding default: close > ema20 (long)")
-                st.session_state.entry_long = [{"left": "close", "op": ">", "right": "ema20"}]
-
+        with st.spinner("Running..."):
             ind_cfg = []
             for i in st.session_state.indicators:
                 item = {"name": i["name"], "type": i["type"]}
@@ -112,12 +126,17 @@ def run_mvp_dashboard():
                     item["period"] = i.get("period", 14)
                 ind_cfg.append(item)
 
+            entry_long = st.session_state.get("entry_long", [])
+            if not entry_long:
+                st.info("No entry conditions → adding default: close > ema20")
+                entry_long = [{"left": "close", "op": ">", "right": "ema20"}]
+
             cfg_dict = {
                 "name": "V4 Test",
                 "market": market,
                 "timeframe": timeframe,
                 "indicators": ind_cfg,
-                "entry": {"long": st.session_state.get("entry_long", []), "short": st.session_state.get("entry_short", [])},
+                "entry": {"long": [{"all": entry_long}], "short": []},
                 "exit": {"long": [], "short": []},
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
