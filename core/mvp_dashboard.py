@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
 from .data_loader import load_ohlcv
 from .indicators import apply_all_indicators, INDICATOR_REGISTRY
@@ -17,8 +18,34 @@ def run_mvp_dashboard():
 
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
+        st.session_state.email = None
+
     if not st.session_state.logged_in:
-        # Your login/register code here (keep it)
+        tab1, tab2 = st.tabs(["Login", "Register"])
+        with tab1:
+            with st.form("login"):
+                email = st.text_input("Email")
+                pw = st.text_input("Password", type="password")
+                if st.form_submit_button("Login"):
+                    ok, msg = authenticate_user(email, pw)
+                    if ok:
+                        st.session_state.logged_in = True
+                        st.session_state.email = email
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+        with tab2:
+            with st.form("register"):
+                reg_email = st.text_input("Email")
+                pw1 = st.text_input("Password", type="password")
+                pw2 = st.text_input("Confirm Password", type="password")
+                if st.form_submit_button("Create Account"):
+                    ok, msg = register_user(reg_email, pw1, pw2)
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
         return
 
     with st.sidebar:
@@ -42,11 +69,19 @@ def run_mvp_dashboard():
 
     for i, ind in enumerate(st.session_state.indicators):
         c1, c2, c3, c4 = st.columns([3,2,2,1])
-        with c1: ind["name"] = st.text_input("Name", ind["name"], key=f"n{i}")
-        with c2: ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"t{i}")
-        with c3: ind["period"] = st.number_input("Period", 1, 300, ind["period"], key=f"p{i}")
+        with c1:
+            ind["name"] = st.text_input("Name", ind["name"], key=f"name{i}")
+        with c2:
+            ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"type{i}")
+        with c3:
+            if ind["type"] == "macd":
+                ind["fast"] = st.number_input("Fast", 5, 50, 12, key=f"fast{i}")
+                ind["slow"] = st.number_input("Slow", 10, 100, 26, key=f"slow{i}")
+                ind["signal"] = st.number_input("Signal", 3, 30, 9, key=f"signal{i}")
+            else:
+                ind["period"] = st.number_input("Period", 1, 300, ind.get("period", 14), key=f"per{i}")
         with c4:
-            if st.button("🗑", key=f"d{i}"):
+            if st.button("🗑", key=f"del{i}"):
                 st.session_state.indicators.pop(i)
                 st.rerun()
 
@@ -64,7 +99,16 @@ def run_mvp_dashboard():
                 st.stop()
 
         with st.spinner("Running backtest..."):
-            ind_cfg = [{"name": i["name"], "type": i["type"], "period": i["period"]} for i in st.session_state.indicators]
+            ind_cfg = []
+            for i in st.session_state.indicators:
+                cfg_item = {"name": i["name"], "type": i["type"]}
+                if i["type"] == "macd":
+                    cfg_item["fast"] = i.get("fast", 12)
+                    cfg_item["slow"] = i.get("slow", 26)
+                    cfg_item["signal"] = i.get("signal", 9)
+                else:
+                    cfg_item["period"] = i.get("period", 14)
+                ind_cfg.append(cfg_item)
 
             cfg_dict = {
                 "name": "V4 Test",
@@ -75,10 +119,7 @@ def run_mvp_dashboard():
                 "exit": {"long": [], "short": []},
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
-# Temporary debug: add loose entry condition so we get some trades
-if not st.session_state.get("entry_long") and not st.session_state.get("entry_short"):
-    st.info("No entry conditions → adding default for testing: close > ema20 (long)")
-    st.session_state.entry_long = [{"left": "close", "op": ">", "right": "ema20"}]
+
             cfg = parse_strategy_yaml(str(cfg_dict))
 
             df, skipped = apply_all_indicators(df, cfg)
@@ -105,7 +146,6 @@ if not st.session_state.get("entry_long") and not st.session_state.get("entry_sh
         st.subheader("Equity Curve")
         st.line_chart(equity)
 
-        # Guarded per-indicator impact
         st.subheader("Indicator Impact")
         if not trades_df.empty and "pnl" in trades_df.columns:
             pnl_series = trades_df["pnl"].reindex(df.index, method="ffill").fillna(0)
@@ -118,10 +158,5 @@ if not st.session_state.get("entry_long") and not st.session_state.get("entry_sh
             if impact:
                 st.dataframe(pd.DataFrame(impact).sort_values("Corr", ascending=False))
         else:
-            st.info("No trades → cannot calculate correlation")
-
-        if st.button("💾 Save Strategy"):
-            name = st.text_input("Name", "V4 Strategy")
-            ok, msg = save_user_strategy(st.session_state.email, name, str(cfg_dict))
-            st.success(msg) if ok else st.error(msg)
+            st.info("No trades → no correlation calculated")
 
