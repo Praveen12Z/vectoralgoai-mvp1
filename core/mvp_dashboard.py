@@ -75,7 +75,10 @@ def run_mvp_dashboard():
                 "exit": {"long": [], "short": []},
                 "risk": {"capital": 10000, "risk_per_trade_pct": 1.0}
             }
-
+# Temporary debug: add loose entry condition so we get some trades
+if not st.session_state.get("entry_long") and not st.session_state.get("entry_short"):
+    st.info("No entry conditions → adding default for testing: close > ema20 (long)")
+    st.session_state.entry_long = [{"left": "close", "op": ">", "right": "ema20"}]
             cfg = parse_strategy_yaml(str(cfg_dict))
 
             df, skipped = apply_all_indicators(df, cfg)
@@ -121,3 +124,4 @@ def run_mvp_dashboard():
             name = st.text_input("Name", "V4 Strategy")
             ok, msg = save_user_strategy(st.session_state.email, name, str(cfg_dict))
             st.success(msg) if ok else st.error(msg)
+
