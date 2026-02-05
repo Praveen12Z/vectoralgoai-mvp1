@@ -119,28 +119,15 @@ def mfi(df: pd.DataFrame, name: str, period: int = 14):
     return df
 
 INDICATOR_REGISTRY = {
-    "sma": sma,
-    "ema": ema,
-    "rsi": rsi,
-    "atr": atr,
-    "macd": macd,
-    "bbands": bbands,
-    "stoch": stoch,
-    "adx": adx,
-    "cci": cci,
-    "obv": obv,
-    "supertrend": supertrend,
-    "vwap": vwap,
-    "psar": psar,
-    "willr": willr,
-    "roc": roc,
-    "mfi": mfi,
+    "sma": sma, "ema": ema, "rsi": rsi, "atr": atr,
+    "macd": macd, "bbands": bbands, "stoch": stoch,
+    "adx": adx, "cci": cci, "obv": obv, "supertrend": supertrend,
+    "vwap": vwap, "psar": psar, "willr": willr, "roc": roc, "mfi": mfi,
 }
 
 def apply_all_indicators(df: pd.DataFrame, cfg):
     df = df.copy()
     source_supported = {"sma", "ema", "rsi", "bbands"}
-    macd_like = {"macd"}
     skipped = []
 
     for ind in cfg.indicators:
@@ -151,11 +138,11 @@ def apply_all_indicators(df: pd.DataFrame, cfg):
 
         try:
             if ind.type.lower() in source_supported:
-                df = func(df, name=ind.name, period=ind.period, source=getattr(ind, "source", "close"))
-            elif ind.type.lower() in macd_like:
-                df = func(df, name=ind.name, fast=12, slow=26, signal=9, source=getattr(ind, "source", "close"))
+                df = func(df, name=ind.name, period=ind.get("period", 14), source=getattr(ind, "source", "close"))
+            elif ind.type.lower() == "macd":
+                df = func(df, name=ind.name, fast=ind.get("fast", 12), slow=ind.get("slow", 26), signal=ind.get("signal", 9))
             else:
-                df = func(df, name=ind.name, period=ind.period)
+                df = func(df, name=ind.name, period=ind.get("period", 14))
         except Exception as e:
             skipped.append(f"{ind.name} ({ind.type}): {str(e)}")
 
