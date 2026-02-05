@@ -21,31 +21,7 @@ def run_mvp_dashboard():
         st.session_state.email = None
 
     if not st.session_state.logged_in:
-        tab1, tab2 = st.tabs(["Login", "Register"])
-        with tab1:
-            with st.form("login"):
-                email = st.text_input("Email")
-                pw = st.text_input("Password", type="password")
-                if st.form_submit_button("Login"):
-                    ok, msg = authenticate_user(email, pw)
-                    if ok:
-                        st.session_state.logged_in = True
-                        st.session_state.email = email
-                        st.success(msg)
-                        st.rerun()
-                    else:
-                        st.error(msg)
-        with tab2:
-            with st.form("register"):
-                reg_email = st.text_input("Email")
-                pw1 = st.text_input("Password", type="password")
-                pw2 = st.text_input("Confirm Password", type="password")
-                if st.form_submit_button("Create Account"):
-                    ok, msg = register_user(reg_email, pw1, pw2)
-                    if ok:
-                        st.success(msg)
-                    else:
-                        st.error(msg)
+        # Your login/register code here (keep it)
         return
 
     with st.sidebar:
@@ -59,7 +35,7 @@ def run_mvp_dashboard():
         timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=3)
         years = st.slider("Years", 0.2, 5.0, 1.5, 0.1)
 
-    st.subheader("1. Indicators")
+    st.subheader("Indicators")
     if "indicators" not in st.session_state:
         st.session_state.indicators = [
             {"name": "ema20", "type": "ema", "period": 20},
@@ -71,13 +47,7 @@ def run_mvp_dashboard():
         c1, c2, c3, c4 = st.columns([3,2,2,1])
         with c1: ind["name"] = st.text_input("Name", ind["name"], key=f"name{i}")
         with c2: ind["type"] = st.selectbox("Type", list(INDICATOR_REGISTRY.keys()), index=list(INDICATOR_REGISTRY.keys()).index(ind["type"]), key=f"type{i}")
-        with c3:
-            if ind["type"] == "macd":
-                ind["fast"] = st.number_input("Fast", 5, 50, 12, key=f"fast{i}")
-                ind["slow"] = st.number_input("Slow", 10, 100, 26, key=f"slow{i}")
-                ind["signal"] = st.number_input("Signal", 3, 30, 9, key=f"signal{i}")
-            else:
-                ind["period"] = st.number_input("Period", 1, 300, ind.get("period", 14), key=f"per{i}")
+        with c3: ind["period"] = st.number_input("Period", 1, 300, ind.get("period", 14), key=f"per{i}")
         with c4:
             if st.button("🗑", key=f"del{i}"):
                 st.session_state.indicators.pop(i)
@@ -87,12 +57,10 @@ def run_mvp_dashboard():
         st.session_state.indicators.append({"name": f"ind{len(st.session_state.indicators)+1}", "type": "ema", "period": 20})
         st.rerun()
 
-    # Entry builder
-    st.subheader("2. Entry Conditions")
+    st.subheader("Long Entry Conditions")
     if "entry_long" not in st.session_state:
         st.session_state.entry_long = []
 
-    st.markdown("**Long Entry (ALL must be true)**")
     for i, cond in enumerate(st.session_state.entry_long):
         c1, c2, c3, c4 = st.columns([3,1,3,1])
         with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"el_left{i}")
@@ -114,16 +82,7 @@ def run_mvp_dashboard():
                 st.stop()
 
         with st.spinner("Backtesting..."):
-            ind_cfg = []
-            for i in st.session_state.indicators:
-                item = {"name": i["name"], "type": i["type"]}
-                if i["type"] == "macd":
-                    item["fast"] = i.get("fast", 12)
-                    item["slow"] = i.get("slow", 26)
-                    item["signal"] = i.get("signal", 9)
-                else:
-                    item["period"] = i.get("period", 14)
-                ind_cfg.append(item)
+            ind_cfg = [{"name": i["name"], "type": i["type"], "period": i.get("period", 14)} for i in st.session_state.indicators]
 
             entry_long = st.session_state.get("entry_long", [])
 
@@ -148,7 +107,6 @@ def run_mvp_dashboard():
             result = run_backtest_v2(df, cfg)
 
         metrics = result["metrics"]
-        trades_df = result["trades_df"]
         equity = result["equity_series"]
 
         st.success(f"Backtest complete – {len(df)} bars | {metrics['num_trades']} trades")
@@ -162,20 +120,6 @@ def run_mvp_dashboard():
 
         st.subheader("Equity Curve")
         st.line_chart(equity)
-
-        st.subheader("Indicator Impact")
-        if not trades_df.empty and "pnl" in trades_df.columns:
-            pnl_series = trades_df["pnl"].reindex(df.index, method="ffill").fillna(0)
-            impact = []
-            for ind in st.session_state.indicators:
-                col = ind["name"]
-                if col in df.columns:
-                    corr = df[col].corr(pnl_series)
-                    impact.append({"Indicator": col, "Type": ind["type"].upper(), "Corr": round(corr, 3)})
-            if impact:
-                st.dataframe(pd.DataFrame(impact).sort_values("Corr", ascending=False))
-        else:
-            st.info("No trades → no correlation calculated")
 
         if st.button("Save Strategy"):
             name = st.text_input("Name", "V4 Strategy")
