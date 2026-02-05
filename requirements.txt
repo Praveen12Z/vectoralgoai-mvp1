@@ -3,7 +3,6 @@ pandas>=2.0
 plotly>=5.18
 pyyaml>=6.0
 python-dotenv>=1.0
-polygon-api-client>=1.13.0
+twelvedata>=1.2.9
+setuptools>=70.0.0    # ← this fixes the pkg_resources import error
 numpy>=2.0.0
-yfinance>=0.2.40
-twelvedata==1.2.9
