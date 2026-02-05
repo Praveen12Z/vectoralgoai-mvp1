@@ -91,15 +91,16 @@ def run_mvp_dashboard():
 
     # Entry builder
     st.subheader("2. Entry Conditions")
+
     st.markdown("**Long Entry (ALL must be true)**")
     if "entry_long" not in st.session_state:
         st.session_state.entry_long = []
 
     for i, cond in enumerate(st.session_state.entry_long):
         c1, c2, c3, c4 = st.columns([3,1,3,1])
-        with c1: cond["left"] = st.text_input("Left (indicator or 'close')", cond["left"], key=f"el_left{i}")
+        with c1: cond["left"] = st.text_input("Left", cond["left"], key=f"el_left{i}")
         with c2: cond["op"] = st.selectbox("Op", OPERATORS, index=OPERATORS.index(cond["op"]), key=f"el_op{i}")
-        with c3: cond["right"] = st.text_input("Right (indicator or value)", cond["right"], key=f"el_right{i}")
+        with c3: cond["right"] = st.text_input("Right", cond["right"], key=f"el_right{i}")
         with c4:
             if st.button("🗑", key=f"del_el{i}"):
                 st.session_state.entry_long.pop(i)
@@ -127,11 +128,7 @@ def run_mvp_dashboard():
         st.session_state.entry_short.append({"left": "close", "op": "<", "right": "ema20"})
         st.rerun()
 
-    # Exit (fixed ATR SL/TP)
-    st.subheader("3. Exit Rules (ATR-based)")
-    st.info("SL/TP multiples (× ATR14) – fixed for now")
-
-    # Run
+    # Run button
     if st.button("Run Backtest", type="primary"):
         with st.spinner("Loading data..."):
             df = load_ohlcv(market, timeframe, years)
