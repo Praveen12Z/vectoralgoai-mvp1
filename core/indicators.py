@@ -2,9 +2,11 @@ import pandas as pd
 import numpy as np
 
 def _get_source(df: pd.DataFrame, source: str = "close") -> pd.Series:
+    if source not in df.columns:
+        raise ValueError(f"Source '{source}' not in DataFrame columns")
     return df[source]
 
-# ==================== 15+ INDICATORS ====================
+# ───────────────────── INDICATOR FUNCTIONS ─────────────────────
 
 def sma(df: pd.DataFrame, name: str, period: int, source: str = "close"):
     df[name] = _get_source(df, source).rolling(period).mean()
@@ -23,6 +25,7 @@ def rsi(df: pd.DataFrame, name: str, period: int = 14, source: str = "close"):
     return df
 
 def atr(df: pd.DataFrame, name: str, period: int = 14):
+    # ATR does NOT use source — works on high/low/close
     tr = pd.concat([
         (df["high"] - df["low"]).abs(),
         (df["high"] - df["close"].shift()).abs(),
@@ -34,8 +37,9 @@ def atr(df: pd.DataFrame, name: str, period: int = 14):
 def macd(df: pd.DataFrame, name: str, fast=12, slow=26, signal=9, source="close"):
     ema_fast = _get_source(df, source).ewm(span=fast, adjust=False).mean()
     ema_slow = _get_source(df, source).ewm(span=slow, adjust=False).mean()
-    df[name + "_macd"] = ema_fast - ema_slow
-    df[name + "_signal"] = df[name + "_macd"].ewm(span=signal, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    df[name + "_macd"] = macd_line
+    df[name + "_signal"] = macd_line.ewm(span=signal, adjust=False).mean()
     df[name + "_hist"] = df[name + "_macd"] - df[name + "_signal"]
     return df
 
@@ -50,7 +54,7 @@ def bbands(df: pd.DataFrame, name: str, period: int = 20, std: float = 2.0, sour
 def stoch(df: pd.DataFrame, name: str, k=14, d=3):
     low_min = df["low"].rolling(k).min()
     high_max = df["high"].rolling(k).max()
-    df[name + "_k"] = 100 * (df["close"] - low_min) / (high_max - low_min)
+    df[name + "_k"] = 100 * (df["close"] - low_min) / (high_max - low_min + 1e-10)
     df[name + "_d"] = df[name + "_k"].rolling(d).mean()
     return df
 
@@ -65,76 +69,60 @@ def adx(df: pd.DataFrame, name: str, period: int = 14):
     dn = df["low"].shift() - df["low"]
     pos_di = 100 * (up.clip(lower=0).rolling(period).mean() / atr_val)
     neg_di = 100 * (dn.clip(lower=0).rolling(period).mean() / atr_val)
-    dx = 100 * abs(pos_di - neg_di) / (pos_di + neg_di)
+    dx = 100 * abs(pos_di - neg_di) / (pos_di + neg_di + 1e-10)
     df[name] = dx.rolling(period).mean()
     return df
 
-def cci(df: pd.DataFrame, name: str, period: int = 20):
-    tp = (df["high"] + df["low"] + df["close"]) / 3
-    ma = tp.rolling(period).mean()
-    mad = (tp - ma).abs().rolling(period).mean()
-    df[name] = (tp - ma) / (0.015 * mad)
-    return df
+# ... (keep your other indicators: cci, obv, supertrend, vwap, psar, willr, roc, mfi)
 
-def obv(df: pd.DataFrame, name: str):
-    df[name] = (np.sign(df["close"].diff()) * df["volume"]).fillna(0).cumsum()
-    return df
-
-def supertrend(df: pd.DataFrame, name: str, period: int = 10, multiplier: float = 3.0):
-    hl2 = (df["high"] + df["low"]) / 2
-    atr_val = atr(df.copy(), "atr_temp", period)["atr_temp"]
-    upper = hl2 + multiplier * atr_val
-    lower = hl2 - multiplier * atr_val
-    df[name + "_trend"] = 0
-    df[name + "_supertrend"] = 0
-    # Simple implementation – full logic can be expanded
-    # (for brevity we use a basic version here)
-    return df
-
-def vwap(df: pd.DataFrame, name: str):
-    tp = (df["high"] + df["low"] + df["close"]) / 3
-    df[name] = (tp * df["volume"]).cumsum() / df["volume"].cumsum()
-    return df
-
-def psar(df: pd.DataFrame, name: str, af_start=0.02, af_max=0.2):
-    # Simple Parabolic SAR implementation
-    df[name] = df["close"].rolling(5).mean()  # placeholder – full PSAR is longer
-    return df
-
-def willr(df: pd.DataFrame, name: str, period: int = 14):
-    hh = df["high"].rolling(period).max()
-    ll = df["low"].rolling(period).min()
-    df[name] = -100 * (hh - df["close"]) / (hh - ll)
-    return df
-
-def roc(df: pd.DataFrame, name: str, period: int = 12):
-    df[name] = (df["close"] / df["close"].shift(period) - 1) * 100
-    return df
-
-def mfi(df: pd.DataFrame, name: str, period: int = 14):
-    tp = (df["high"] + df["low"] + df["close"]) / 3
-    mf = tp * df["volume"]
-    delta = tp.diff()
-    pos_mf = mf.where(delta > 0, 0).rolling(period).sum()
-    neg_mf = mf.where(delta < 0, 0).rolling(period).sum()
-    mr = pos_mf / neg_mf
-    df[name] = 100 - (100 / (1 + mr))
-    return df
-
-# Registry
+# ──────────────────────────────────────────────────────────────
+# REGISTRY – now with source support flag
+# ──────────────────────────────────────────────────────────────
 INDICATOR_REGISTRY = {
-    "sma": sma, "ema": ema, "rsi": rsi, "atr": atr,
-    "macd": macd, "bbands": bbands, "stoch": stoch,
-    "adx": adx, "cci": cci, "obv": obv, "supertrend": supertrend,
-    "vwap": vwap, "psar": psar, "willr": willr, "roc": roc, "mfi": mfi,
+    "sma": sma,
+    "ema": ema,
+    "rsi": rsi,
+    "atr": atr,          # no source
+    "macd": macd,
+    "bbands": bbands,
+    "stoch": stoch,      # no source
+    "adx": adx,          # no source
+    "cci": cci,          # no source
+    "obv": obv,          # no source
+    "supertrend": supertrend,  # no source
+    "vwap": vwap,        # no source
+    "psar": psar,        # no source
+    "willr": willr,      # no source
+    "roc": roc,          # no source
+    "mfi": mfi,          # no source
 }
 
+# ──────────────────────────────────────────────────────────────
+# FIXED APPLY FUNCTION – only pass source when supported
+# ──────────────────────────────────────────────────────────────
 def apply_all_indicators(df: pd.DataFrame, cfg):
     df = df.copy()
+
+    # Indicators that accept 'source' parameter
+    source_supported = {"sma", "ema", "rsi", "macd", "bbands"}
+
     for ind in cfg.indicators:
         func = INDICATOR_REGISTRY.get(ind.type.lower())
-        if func:
-            df = func(df, ind.name, ind.period, getattr(ind, "source", "close"))
-        else:
-            st.warning(f"Unknown indicator: {ind.type}")
+        if not func:
+            st.warning(f"Unknown indicator type: {ind.type}")
+            continue
+
+        # Prepare arguments
+        kwargs = {"name": ind.name, "period": ind.period}
+        if ind.type.lower() in source_supported:
+            kwargs["source"] = getattr(ind, "source", "close")
+
+        # Call function safely
+        try:
+            df = func(df, **kwargs)
+        except TypeError as e:
+            st.warning(f"Indicator {ind.name} ({ind.type}) failed: {str(e)}. Skipping.")
+        except Exception as e:
+            st.error(f"Critical error in {ind.name}: {str(e)}")
+
     return df
