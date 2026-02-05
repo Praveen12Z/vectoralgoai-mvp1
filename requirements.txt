@@ -5,3 +5,4 @@ pyyaml>=6.0
 python-dotenv>=1.0
 polygon-api-client>=1.13.0
 numpy>=2.0.0
+yfinance>=0.2.40
