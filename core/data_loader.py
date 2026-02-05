@@ -1,53 +1,77 @@
 from __future__ import annotations
-import pandas as pd
-import yfinance as yf
-import streamlit as st
+import os
 from datetime import datetime, timedelta
+import pandas as pd
+import streamlit as st
+from twelvedata import TDClient
 
-# Yahoo tickers (no prefix needed for most)
-YAHOO_MAP = {
-    "NAS100": "^NDX",
-    "US30":   "^DJI",
-    "SPX500": "^GSPC",
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "USDJPY": "USDJPY=X",
-    "AUDUSD": "AUDUSD=X",
-    "USDCAD": "USDCAD=X",
-    "EURJPY": "EURJPY=X",
-    "GBPJPY": "GBPJPY=X",
-    "XAUUSD": "GC=F",   # Gold futures
-    "XAGUSD": "SI=F",   # Silver futures
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Twelve Data symbols (2026 standard)
+TD_MAP = {
+    "NAS100": "NDX",
+    "US30":   "DJI",
+    "SPX500": "SPX",
+    "EURUSD": "EUR/USD",
+    "GBPUSD": "GBP/USD",
+    "USDJPY": "USD/JPY",
+    "AUDUSD": "AUD/USD",
+    "USDCAD": "USD/CAD",
+    "EURJPY": "EUR/JPY",
+    "GBPJPY": "GBP/JPY",
+    "XAUUSD": "XAU/USD",
+    "XAGUSD": "XAG/USD",
 }
 
-@st.cache_data(ttl=3600 * 6, show_spinner="Fetching market data...")
+@st.cache_data(ttl=3600 * 6, show_spinner="Fetching market data from Twelve Data...")
 def load_ohlcv(symbol: str, timeframe: str, years: float = 3) -> pd.DataFrame:
-    ticker = YAHOO_MAP.get(symbol.upper(), symbol.upper())
+    api_key = st.secrets.get("TWELVE_DATA_API_KEY")
+    if not api_key:
+        st.error("TWELVE_DATA_API_KEY not found in secrets.")
+        return pd.DataFrame()
 
-    # Yahoo timeframe mapping (1m only last 7 days, 1h last 730 days, etc.)
-    period = f"{int(years * 365)}d" if years <= 2 else "max"  # safe
+    client = TDClient(apikey=api_key)
+    td_symbol = TD_MAP.get(symbol.upper(), symbol.upper())
+
+    # Timeframe mapping
+    tf_map = {
+        "1m": "1min", "5m": "5min", "15m": "15min",
+        "1h": "1h", "4h": "4h", "1d": "1day"
+    }
+    interval = tf_map.get(timeframe.lower(), "1h")
+
+    # Date range
+    end_date = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    start_date = (datetime.utcnow() - timedelta(days=int(365 * years))).strftime("%Y-%m-%d %H:%M:%S")
 
     try:
-        df = yf.download(
-            ticker,
-            period=period,
-            interval=timeframe,
-            progress=False,
-            auto_adjust=True,
-            prepost=False
+        ts = client.time_series(
+            symbol=td_symbol,
+            interval=interval,
+            start_date=start_date,
+            end_date=end_date,
+            outputsize=5000,  # max per call
         )
 
+        df = ts.as_pandas()
+
         if df.empty:
-            st.warning(f"No data from Yahoo for {symbol} ({ticker})")
+            st.warning(f"No data returned from Twelve Data for {symbol} ({td_symbol})")
             return pd.DataFrame()
 
-        # Clean columns
-        df = df[["Open", "High", "Low", "Close", "Volume"]]
-        df.columns = ["open", "high", "low", "close", "volume"]
+        # Standardise columns
+        df = df[["open", "high", "low", "close", "volume"]]
         df.index.name = "timestamp"
+
+        # Cache locally (optional)
+        cache_path = os.path.join(DATA_DIR, f"{symbol}_{timeframe}.csv")
+        df.to_csv(cache_path)
 
         return df
 
     except Exception as e:
-        st.error(f"Yahoo Finance error for {symbol}: {str(e)}")
+        st.error(f"Twelve Data error for {symbol}: {str(e)}")
+        if "rate limit" in str(e).lower():
+            st.error("Rate limit hit. Free tier: 800 calls/day. Wait or upgrade.")
         return pd.DataFrame()
